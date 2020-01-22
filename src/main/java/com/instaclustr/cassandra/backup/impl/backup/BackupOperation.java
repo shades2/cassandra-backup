@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -125,8 +124,10 @@ public class BackupOperation extends Operation<BackupOperationRequest> {
 
         // add snapshot files to the manifest
         for (final KeyspaceColumnFamilySnapshot keyspaceColumnFamilySnapshot : kcfss) {
-            final Path bucketKey = Paths.get("data").resolve(Paths.get(keyspaceColumnFamilySnapshot.keyspace, keyspaceColumnFamilySnapshot.table));
-            Iterables.addAll(manifest, SSTableUtils.ssTableManifest(keyspaceColumnFamilySnapshot.snapshotDirectory, bucketKey).collect(toList()));
+            if (!blacklistedFromBackup(keyspaceColumnFamilySnapshot)) {
+                final Path bucketKey = Paths.get("data").resolve(Paths.get(keyspaceColumnFamilySnapshot.keyspace, keyspaceColumnFamilySnapshot.table));
+                Iterables.addAll(manifest, SSTableUtils.ssTableManifest(keyspaceColumnFamilySnapshot.snapshotDirectory, bucketKey).collect(toList()));
+            }
         }
 
         logger.info("{} files in manifest for snapshot \"{}\".", manifest.size(), snapshotTag);
@@ -136,6 +137,13 @@ public class BackupOperation extends Operation<BackupOperationRequest> {
         }
 
         return manifest;
+    }
+
+    private boolean blacklistedFromBackup(final KeyspaceColumnFamilySnapshot keyspaceColumnFamilySnapshot) {
+
+        String keyspace = keyspaceColumnFamilySnapshot.keyspace;
+
+        return keyspace.startsWith("system") && !keyspace.equals("system_schema");
     }
 
     private Iterable<ManifestEntry> saveManifest(final Iterable<ManifestEntry> manifest, String tag) throws IOException {
@@ -179,7 +187,7 @@ public class BackupOperation extends Operation<BackupOperationRequest> {
                                                   ManifestEntry.Type.FILE));
     }
 
-    private static Map<String, ? extends Iterable<KeyspaceColumnFamilySnapshot>> findKeyspaceColumnFamilySnapshots(final Path cassandraDataDirectory) throws IOException {
+    private Map<String, ? extends Iterable<KeyspaceColumnFamilySnapshot>> findKeyspaceColumnFamilySnapshots(final Path cassandraDataDirectory) throws IOException {
         // /var/lib/cassandra /data /<keyspace> /<column family> /snapshots /<snapshot>
         return Files.find(cassandraDataDirectory,
                           4,
