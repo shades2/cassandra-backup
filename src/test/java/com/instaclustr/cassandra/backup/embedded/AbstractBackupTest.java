@@ -333,8 +333,8 @@ public abstract class AbstractBackupTest {
         EmbeddedCassandraFactory cassandraFactory = new EmbeddedCassandraFactory();
         cassandraFactory.setWorkingDirectory(cassandraDir);
         cassandraFactory.setArtifact(Artifact.ofVersion(Version.of("4.0-alpha4")));
-        cassandraFactory.getJvmOptions().add("-Xmx1g");
-        cassandraFactory.getJvmOptions().add("-Xms1g");
+        cassandraFactory.getJvmOptions().add("-Xmx2g");
+        cassandraFactory.getJvmOptions().add("-Xms2g");
 
         Cassandra cassandra = cassandraFactory.create();
 
@@ -404,8 +404,8 @@ public abstract class AbstractBackupTest {
         EmbeddedCassandraFactory cassandraToBackupFactory = new EmbeddedCassandraFactory();
         cassandraToBackupFactory.setWorkingDirectory(cassandraDir);
         cassandraToBackupFactory.setArtifact(CASSANDRA_ARTIFACT);
-        cassandraToBackupFactory.getJvmOptions().add("-Xmx1g");
-        cassandraToBackupFactory.getJvmOptions().add("-Xms1g");
+        cassandraToBackupFactory.getJvmOptions().add("-Xmx2g");
+        cassandraToBackupFactory.getJvmOptions().add("-Xms2g");
         Cassandra cassandraToBackup = cassandraToBackupFactory.create();
 
         cassandraToBackup.start();
@@ -504,8 +504,8 @@ public abstract class AbstractBackupTest {
 
         EmbeddedCassandraFactory cassandraToRestoreFactory = new EmbeddedCassandraFactory();
         cassandraToRestoreFactory.setWorkingDirectory(cassandraRestoredDir);
-        cassandraToRestoreFactory.getJvmOptions().add("-Xmx1g");
-        cassandraToRestoreFactory.getJvmOptions().add("-Xms1g");
+        cassandraToRestoreFactory.getJvmOptions().add("-Xmx2g");
+        cassandraToRestoreFactory.getJvmOptions().add("-Xms2g");
         cassandraToRestoreFactory.setArtifact(new DefaultArtifact(Version.of(CASSANDRA_VERSION), cassandraRestoredDir));
         Cassandra cassandraToRestore = cassandraToRestoreFactory.create();
 
