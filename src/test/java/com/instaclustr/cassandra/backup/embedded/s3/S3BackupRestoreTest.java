@@ -23,7 +23,6 @@ import com.instaclustr.cassandra.backup.s3.aws.S3Module;
 import com.instaclustr.cassandra.backup.s3.aws.S3Module.S3TransferManagerFactory;
 import com.instaclustr.cassandra.backup.s3.aws.S3Restorer;
 import com.instaclustr.kubernetes.KubernetesApiModule;
-import com.instaclustr.threading.Executors.FixedTasksExecutorSupplier;
 import com.instaclustr.threading.ExecutorsModule;
 import io.kubernetes.client.ApiException;
 import org.testng.Assert;
@@ -101,7 +100,7 @@ public class S3BackupRestoreTest extends BaseS3BackupRestoreTest {
             final RestoreOperationRequest restoreOperationRequest = new RestoreOperationRequest();
             restoreOperationRequest.storageLocation = new StorageLocation("s3://" + BUCKET_NAME + "/cluster/dc/node");
 
-            final S3Restorer s3Restorer = new S3Restorer(getTransferManagerFactory(), new FixedTasksExecutorSupplier(), restoreOperationRequest);
+            final S3Restorer s3Restorer = new S3Restorer(getTransferManagerFactory(), restoreOperationRequest);
 
             // 1
 

@@ -23,6 +23,8 @@ import com.instaclustr.cassandra.backup.impl.Manifest;
 import com.instaclustr.cassandra.backup.impl.ManifestEntry;
 import com.instaclustr.cassandra.backup.impl.ManifestEntry.Type;
 import com.instaclustr.cassandra.backup.impl.StorageLocation;
+import com.instaclustr.cassandra.backup.impl.restore.DownloadTracker;
+import com.instaclustr.cassandra.backup.impl.restore.DownloadTracker.DownloadSession;
 import com.instaclustr.cassandra.backup.impl.restore.RestorationStrategy;
 import com.instaclustr.cassandra.backup.impl.restore.RestoreOperationRequest;
 import com.instaclustr.cassandra.backup.impl.restore.Restorer;
@@ -31,7 +33,6 @@ import com.instaclustr.cassandra.topology.CassandraClusterTopology.ClusterTopolo
 import com.instaclustr.io.FileUtils;
 import com.instaclustr.io.GlobalLock;
 import com.instaclustr.operations.Operation;
-import com.instaclustr.operations.OperationProgressTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,10 +49,13 @@ public class InPlaceRestorationStrategy implements RestorationStrategy {
     private static final Logger logger = LoggerFactory.getLogger(InPlaceRestorationStrategy.class);
 
     private final ObjectMapper objectMapper;
+    private final DownloadTracker downloadTracker;
 
     @Inject
-    public InPlaceRestorationStrategy(final ObjectMapper objectMapper) {
+    public InPlaceRestorationStrategy(final ObjectMapper objectMapper,
+                                      final DownloadTracker downloadTracker) {
         this.objectMapper = objectMapper;
+        this.downloadTracker = downloadTracker;
     }
 
     @Override
@@ -106,18 +110,16 @@ public class InPlaceRestorationStrategy implements RestorationStrategy {
             // the first round, see what is in manifest and what is currently present,
             // if it is not present, we will download it
 
-            for (final ManifestEntry manifestFile : manifestFiles)
-            {
+            for (final ManifestEntry manifestFile : manifestFiles) {
                 // do not download schemas
-                if (manifestFile.type == Type.CQL_SCHEMA)
+                if (manifestFile.type == Type.CQL_SCHEMA) {
                     continue;
+                }
 
-                if (Files.exists(manifestFile.localFile))
-                {
+                if (Files.exists(manifestFile.localFile)) {
                     // this file exists on a local disk as well as in manifest, there is nothing to download nor remove
                     logger.info(String.format("%s found locally, not downloading", manifestFile.localFile));
-                } else
-                {
+                } else {
                     // if it does not exist locally, we have to download it
                     entriesToDownload.add(manifestFile);
                 }
@@ -150,7 +152,16 @@ public class InPlaceRestorationStrategy implements RestorationStrategy {
             });
 
             // 7. Download files in the manifest
-            restorer.downloadFiles(entriesToDownload, new OperationProgressTracker(operation, entriesToDownload.size()));
+
+            DownloadSession downloadSession = null;
+
+            try {
+                downloadSession = downloadTracker.submit(restorer, operation, entriesToDownload, operation.request.snapshotTag);
+                downloadSession.waitUntilConsideredFinished();
+                downloadTracker.cancelIfNecessary(downloadSession);
+            } finally {
+                downloadTracker.removeSession(downloadSession);
+            }
 
             // K8S will handle copying over tokens.yaml fragment and disabling bootstrap fragment to right directory to be picked up by Cassandra
             // "standalone / vanilla" Cassandra installations has to cover this manually for now.

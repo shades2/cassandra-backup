@@ -73,6 +73,7 @@ public abstract class AbstractBackupTest {
 
     protected final Path target = new File("target").toPath().toAbsolutePath();
     protected final Path cassandraDir = new File("target/cassandra").toPath().toAbsolutePath();
+    protected final Path cassandraDataDir = new File("target/cassandra/data/data").toPath().toAbsolutePath();
     protected final Path cassandraRestoredDir = new File("target/cassandra-restored").toPath().toAbsolutePath();
     protected final Path cassandraRestoredConfigDir = new File("target/cassandra-restored/conf").toPath().toAbsolutePath();
 
@@ -337,10 +338,13 @@ public abstract class AbstractBackupTest {
 
     public void inPlaceBackupRestoreTest(final String[][] arguments) throws Exception {
         try {
-            List<Long> insertionTimes = backup(arguments);
+            startDatabase();
+            List<Long> insertionTimes = initialiseDatabase(arguments);
             restoreOnStoppedNode(insertionTimes, arguments);
         } catch (final Exception ex) {
             deleteDirectory(Paths.get(target("commitlog_download_dir")));
+        } finally {
+            stopCassandra();
         }
     }
 
@@ -415,76 +419,103 @@ public abstract class AbstractBackupTest {
         }
     }
 
-    public List<Long> backup(final String[][] arguments) throws Exception {
-        // BACKUP
+    protected Cassandra testCassandra = null;
 
+    public List<Long> populateDatabase(final CqlSession session, String[][] arguments) {
+
+        List<Long> insertionTimes = new ArrayList<>();
+
+        // keyspace, table
+
+        session.execute(createKeyspace(KEYSPACE)
+                            .ifNotExists()
+                            .withNetworkTopologyStrategy(of("datacenter1", 1))
+                            .build());
+
+        session.execute(createTable(KEYSPACE, TABLE)
+                            .ifNotExists()
+                            .withPartitionKey(ID, TEXT)
+                            .withClusteringColumn(DATE, TIMEUUID)
+                            .withColumn(NAME, TEXT)
+                            .build());
+
+        // keyspace2, table2
+
+        session.execute(createKeyspace(TestEntity2.KEYSPACE_2)
+                            .ifNotExists()
+                            .withNetworkTopologyStrategy(of("datacenter1", 1))
+                            .build());
+
+        session.execute(createTable(TestEntity2.KEYSPACE_2, TestEntity2.TABLE_2)
+                            .ifNotExists()
+                            .withPartitionKey(ID, TEXT)
+                            .withClusteringColumn(DATE, TIMEUUID)
+                            .withColumn(NAME, TEXT)
+                            .build());
+
+        // this will invoke backup 2 times, each time generating 2 records and taking a snapshot and backup
+        List<Long> times = range(0, 2)
+            .mapToObj(i -> {
+                if (arguments != null) {
+                    return insertAndBackup(2, session, arguments[0]);
+                } else {
+                    return insert(2, session);
+                }
+            })
+            .flatMap(Collection::stream).collect(toList());
+
+        List<Long> times2;
+
+        if (arguments != null) {
+            // insert two more records, snapshot with predefined name and back it up too
+            times2 = insertAndBackup(2, session, arguments[1]);
+        } else {
+            times2 = insert(2, session);
+        }
+
+        // insert two more rows but do not back them up, this simulates that they are written in commit logs
+        // so even we have not backed it up, once they are replayed, they will all be there
+        List<Long> times3 = insert(2, session);
+
+        insertionTimes.addAll(times);
+        insertionTimes.addAll(times2);
+        insertionTimes.addAll(times3);
+
+        return insertionTimes;
+    }
+
+    protected void stopCassandra() {
+        if (testCassandra != null) {
+            testCassandra.stop();
+        }
+    }
+
+    protected void startDatabase() {
         EmbeddedCassandraFactory cassandraToBackupFactory = new EmbeddedCassandraFactory();
         cassandraToBackupFactory.setWorkingDirectory(cassandraDir);
         cassandraToBackupFactory.setArtifact(CASSANDRA_ARTIFACT);
         cassandraToBackupFactory.getJvmOptions().add("-Xmx2g");
         cassandraToBackupFactory.getJvmOptions().add("-Xms2g");
-        Cassandra cassandraToBackup = cassandraToBackupFactory.create();
+        testCassandra = cassandraToBackupFactory.create();
 
-        cassandraToBackup.start();
+        testCassandra.start();
+    }
 
-        List<Long> insertionTimes = new ArrayList<>();
+    public List<Long> initialiseDatabase(final String[][] arguments) throws Exception {
+        List<Long> insertionTimes;
 
         try (CqlSession session = CqlSession.builder().build()) {
 
-            // keyspace, table
-
-            session.execute(createKeyspace(KEYSPACE)
-                                .ifNotExists()
-                                .withNetworkTopologyStrategy(of("datacenter1", 1))
-                                .build());
-
-            session.execute(createTable(KEYSPACE, TABLE)
-                                .ifNotExists()
-                                .withPartitionKey(ID, TEXT)
-                                .withClusteringColumn(DATE, TIMEUUID)
-                                .withColumn(NAME, TEXT)
-                                .build());
-
-            // keyspace2, table2
-
-            session.execute(createKeyspace(TestEntity2.KEYSPACE_2)
-                                .ifNotExists()
-                                .withNetworkTopologyStrategy(of("datacenter1", 1))
-                                .build());
-
-            session.execute(createTable(TestEntity2.KEYSPACE_2, TestEntity2.TABLE_2)
-                                .ifNotExists()
-                                .withPartitionKey(ID, TEXT)
-                                .withClusteringColumn(DATE, TIMEUUID)
-                                .withColumn(NAME, TEXT)
-                                .build());
-
-            // this will invoke backup 2 times, each time generating 2 records and taking a snapshot and backup
-            List<Long> times = range(0, 2)
-                .mapToObj(i -> insertAndBackup(2, session, arguments[0]))
-                .flatMap(Collection::stream).collect(toList());
-
-            // insert two more records, snapshot with predefined name and back it up too
-            List<Long> times2 = insertAndBackup(2, session, arguments[1]);
-
-            // insert two more rows but do not back them up, this simulates that they are written in commit logs
-            // so even we have not backed it up, once they are replayed, they will all be there
-            List<Long> times3 = insert(2, session);
-
-            insertionTimes.addAll(times);
-            insertionTimes.addAll(times2);
-            insertionTimes.addAll(times3);
+            insertionTimes = populateDatabase(session, arguments);
 
             assertEquals(insertionTimes.size(), NUMBER_OF_INSERTED_ROWS);
 
-            logger.info("Executing backup of commit logs {}", asList(arguments[2]));
-
-            BackupRestoreCLI.mainWithoutExit(arguments[2]);
-        } catch (Exception ex) {
-            ex.printStackTrace();
+            if (arguments != null) {
+                logger.info("Executing backup of commit logs {}", asList(arguments[2]));
+                BackupRestoreCLI.mainWithoutExit(arguments[2]);
+            }
         } finally {
             copyCassandra(cassandraDir, cassandraRestoredDir);
-            cassandraToBackup.stop();
         }
 
         return insertionTimes;

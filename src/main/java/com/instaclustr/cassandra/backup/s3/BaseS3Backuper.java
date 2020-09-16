@@ -30,7 +30,6 @@ import com.instaclustr.cassandra.backup.impl.RemoteObjectReference;
 import com.instaclustr.cassandra.backup.impl.backup.BackupCommitLogsOperationRequest;
 import com.instaclustr.cassandra.backup.impl.backup.BackupOperationRequest;
 import com.instaclustr.cassandra.backup.impl.backup.Backuper;
-import com.instaclustr.threading.Executors.ExecutorServiceSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,16 +39,14 @@ public class BaseS3Backuper extends Backuper {
     private final TransferManager transferManager;
 
     public BaseS3Backuper(final TransferManagerFactory transferManagerFactory,
-                          final ExecutorServiceSupplier executorSupplier,
                           final BackupOperationRequest request) {
-        super(request, executorSupplier);
+        super(request);
         this.transferManager = transferManagerFactory.build(request);
     }
 
     public BaseS3Backuper(final TransferManagerFactory transferManagerFactory,
-                          final ExecutorServiceSupplier executorServiceSupplier,
                           final BackupCommitLogsOperationRequest request) {
-        super(request, executorServiceSupplier);
+        super(request);
         this.transferManager = transferManagerFactory.build(request);
     }
 

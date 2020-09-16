@@ -28,7 +28,6 @@ import com.instaclustr.cassandra.backup.impl.RemoteObjectReference;
 import com.instaclustr.cassandra.backup.impl.restore.RestoreCommitLogsOperationRequest;
 import com.instaclustr.cassandra.backup.impl.restore.RestoreOperationRequest;
 import com.instaclustr.cassandra.backup.impl.restore.Restorer;
-import com.instaclustr.threading.Executors.ExecutorServiceSupplier;
 
 public class GCPRestorer extends Restorer {
 
@@ -36,17 +35,15 @@ public class GCPRestorer extends Restorer {
 
     @AssistedInject
     public GCPRestorer(final GoogleStorageFactory storageFactory,
-                       final ExecutorServiceSupplier executorServiceSupplier,
                        @Assisted final RestoreOperationRequest request) {
-        super(request, executorServiceSupplier);
+        super(request);
         this.storage = storageFactory.build(request);
     }
 
     @AssistedInject
     public GCPRestorer(final GoogleStorageFactory storageFactory,
-                       final ExecutorServiceSupplier executorServiceSupplier,
                        @Assisted final RestoreCommitLogsOperationRequest request) {
-        super(request, executorServiceSupplier);
+        super(request);
         this.storage = storageFactory.build(request);
     }
 

@@ -4,7 +4,6 @@ import static com.instaclustr.cassandra.backup.impl.Manifest.getLocalManifestPat
 import static com.instaclustr.cassandra.backup.impl.Manifest.getManifestAsManifestEntry;
 import static java.lang.String.format;
 
-import java.nio.channels.FileLock;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -21,14 +20,14 @@ import com.instaclustr.cassandra.backup.impl.Snapshots.Snapshot;
 import com.instaclustr.cassandra.backup.impl.backup.BackupOperationRequest;
 import com.instaclustr.cassandra.backup.impl.backup.BackupPhaseResultGatherer;
 import com.instaclustr.cassandra.backup.impl.backup.Backuper;
+import com.instaclustr.cassandra.backup.impl.backup.UploadTracker;
+import com.instaclustr.cassandra.backup.impl.backup.UploadTracker.UploadSession;
 import com.instaclustr.cassandra.backup.impl.backup.coordination.ClearSnapshotOperation.ClearSnapshotOperationRequest;
 import com.instaclustr.cassandra.backup.impl.backup.coordination.TakeSnapshotOperation.TakeSnapshotOperationRequest;
 import com.instaclustr.cassandra.backup.impl.interaction.CassandraSchemaVersion;
 import com.instaclustr.cassandra.backup.impl.interaction.CassandraTokens;
-import com.instaclustr.io.GlobalLock;
 import com.instaclustr.operations.Operation;
 import com.instaclustr.operations.OperationCoordinator;
-import com.instaclustr.operations.OperationProgressTracker;
 import com.instaclustr.operations.ResultGatherer;
 import jmx.org.apache.cassandra.service.CassandraJMXService;
 import org.slf4j.Logger;
@@ -42,15 +41,18 @@ public class BaseBackupOperationCoordinator extends OperationCoordinator<BackupO
     protected final Map<String, BackuperFactory> backuperFactoryMap;
     protected final Map<String, BucketServiceFactory> bucketServiceFactoryMap;
     protected final ObjectMapper objectMapper;
+    protected final UploadTracker uploadTracker;
 
     public BaseBackupOperationCoordinator(final CassandraJMXService cassandraJMXService,
                                           final Map<String, BackuperFactory> backuperFactoryMap,
                                           final Map<String, BucketServiceFactory> bucketServiceFactoryMap,
-                                          final ObjectMapper objectMapper) {
+                                          final ObjectMapper objectMapper,
+                                          final UploadTracker uploadTracker) {
         this.cassandraJMXService = cassandraJMXService;
         this.backuperFactoryMap = backuperFactoryMap;
         this.bucketServiceFactoryMap = bucketServiceFactoryMap;
         this.objectMapper = objectMapper;
+        this.uploadTracker = uploadTracker;
     }
 
     @Override
@@ -59,8 +61,6 @@ public class BaseBackupOperationCoordinator extends OperationCoordinator<BackupO
         final BackupOperationRequest request = operation.request;
 
         logger.info(request.toString());
-
-        FileLock fileLock = null;
 
         final BackupPhaseResultGatherer gatherer = new BackupPhaseResultGatherer();
 
@@ -71,8 +71,6 @@ public class BaseBackupOperationCoordinator extends OperationCoordinator<BackupO
             assert backuperFactoryMap != null;
             assert bucketServiceFactoryMap != null;
             assert objectMapper != null;
-
-            fileLock = new GlobalLock(request.lockFile).waitForLock();
 
             if (!request.keepExistingSnapshot) {
                 new ClearSnapshotOperation(cassandraJMXService, new ClearSnapshotOperationRequest(request.snapshotTag)).run0();
@@ -120,7 +118,16 @@ public class BaseBackupOperationCoordinator extends OperationCoordinator<BackupO
 
                 final List<ManifestEntry> manifestEntries = manifest.getManifestEntries();
 
-                backuper.uploadOrFreshenFiles(operation, manifestEntries, new OperationProgressTracker(operation, manifestEntries.size()));
+                UploadSession uploadSession = null;
+
+                try {
+                    uploadSession = uploadTracker.submit(backuper, operation, manifestEntries, request.snapshotTag);
+
+                    uploadSession.waitUntilConsideredFinished();
+                    uploadTracker.cancelIfNecessary(uploadSession);
+                } finally {
+                    uploadTracker.removeSession(uploadSession);
+                }
             } finally {
                 if (bucketService != null) {
                     bucketService.close();
@@ -143,16 +150,6 @@ public class BaseBackupOperationCoordinator extends OperationCoordinator<BackupO
                 logger.error(String.format("Unable to clear snapshot '%s' after backup!", request.snapshotTag), ex);
                 if (cause == null) {
                     cause = ex;
-                }
-            }
-
-            try {
-                if (fileLock != null) {
-                    fileLock.release();
-                }
-            } catch (final Exception ex) {
-                if (cause != null) {
-                    cause = new OperationCoordinatorException(format("Unable to release file lock on a backup %s", operation), ex);
                 }
             }
         }

@@ -8,6 +8,7 @@ import com.instaclustr.cassandra.backup.guice.BackuperFactory;
 import com.instaclustr.cassandra.backup.guice.BucketServiceFactory;
 import com.instaclustr.cassandra.backup.impl.backup.BackupOperationRequest;
 import com.instaclustr.cassandra.backup.impl.backup.BackupPhaseResultGatherer;
+import com.instaclustr.cassandra.backup.impl.backup.UploadTracker;
 import com.instaclustr.operations.Operation;
 import com.instaclustr.operations.ResultGatherer;
 import jmx.org.apache.cassandra.service.CassandraJMXService;
@@ -18,8 +19,13 @@ public class DefaultBackupOperationCoordinator extends BaseBackupOperationCoordi
     public DefaultBackupOperationCoordinator(final CassandraJMXService cassandraJMXService,
                                              final Map<String, BackuperFactory> backuperFactoryMap,
                                              final Map<String, BucketServiceFactory> bucketServiceFactoryMap,
-                                             final ObjectMapper objectMapper) {
-        super(cassandraJMXService, backuperFactoryMap, bucketServiceFactoryMap, objectMapper);
+                                             final ObjectMapper objectMapper,
+                                             final UploadTracker uploadTracker) {
+        super(cassandraJMXService,
+              backuperFactoryMap,
+              bucketServiceFactoryMap,
+              objectMapper,
+              uploadTracker);
     }
 
     @Override

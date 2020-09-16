@@ -18,20 +18,17 @@ import com.instaclustr.cassandra.backup.impl.RemoteObjectReference;
 import com.instaclustr.cassandra.backup.impl.restore.RestoreCommitLogsOperationRequest;
 import com.instaclustr.cassandra.backup.impl.restore.RestoreOperationRequest;
 import com.instaclustr.cassandra.backup.impl.restore.Restorer;
-import com.instaclustr.threading.Executors.ExecutorServiceSupplier;
 
 public class LocalFileRestorer extends Restorer {
 
     @AssistedInject
-    public LocalFileRestorer(final ExecutorServiceSupplier executorServiceSupplier,
-                             @Assisted final RestoreOperationRequest request) {
-        super(request, executorServiceSupplier);
+    public LocalFileRestorer(@Assisted final RestoreOperationRequest request) {
+        super(request);
     }
 
     @AssistedInject
-    public LocalFileRestorer(final ExecutorServiceSupplier executorServiceSupplier,
-                             @Assisted final RestoreCommitLogsOperationRequest request) {
-        super(request, executorServiceSupplier);
+    public LocalFileRestorer(@Assisted final RestoreCommitLogsOperationRequest request) {
+        super(request);
     }
 
     @Override

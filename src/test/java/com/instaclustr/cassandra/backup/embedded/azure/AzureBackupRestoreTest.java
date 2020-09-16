@@ -13,19 +13,22 @@ import com.google.inject.Guice;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
 import com.google.inject.Module;
+import com.instaclustr.cassandra.CassandraModule;
 import com.instaclustr.cassandra.backup.azure.AzureBucketService;
 import com.instaclustr.cassandra.backup.azure.AzureModule;
 import com.instaclustr.cassandra.backup.azure.AzureModule.CloudStorageAccountFactory;
 import com.instaclustr.cassandra.backup.azure.AzureRestorer;
 import com.instaclustr.cassandra.backup.impl.StorageLocation;
+import com.instaclustr.cassandra.backup.impl.backup.BackupModules.BackupModule;
+import com.instaclustr.cassandra.backup.impl.backup.BackupModules.UploadingModule;
 import com.instaclustr.cassandra.backup.impl.backup.BackupOperationRequest;
 import com.instaclustr.cassandra.backup.impl.restore.RestoreOperationRequest;
 import com.instaclustr.kubernetes.KubernetesApiModule;
-import com.instaclustr.threading.Executors.FixedTasksExecutorSupplier;
 import com.instaclustr.threading.ExecutorsModule;
 import com.microsoft.azure.storage.blob.CloudBlobClient;
 import com.microsoft.azure.storage.blob.CloudBlobContainer;
 import com.microsoft.azure.storage.blob.CloudBlockBlob;
+import jmx.org.apache.cassandra.CassandraJMXConnectionInfo;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
@@ -43,11 +46,13 @@ public class AzureBackupRestoreTest extends BaseAzureBackupRestoreTest {
     @BeforeMethod
     public void setup() throws Exception {
 
-        final List<Module> modules = new ArrayList<Module>()
-        {{
+        final List<Module> modules = new ArrayList<Module>() {{
             add(new KubernetesApiModule());
             add(new AzureModule());
             add(new ExecutorsModule());
+            add(new UploadingModule());
+            add(new BackupModule());
+            add(new CassandraModule(new CassandraJMXConnectionInfo()));
         }};
 
         final Injector injector = Guice.createInjector(modules);
@@ -105,7 +110,7 @@ public class AzureBackupRestoreTest extends BaseAzureBackupRestoreTest {
             final RestoreOperationRequest restoreOperationRequest = new RestoreOperationRequest();
             restoreOperationRequest.storageLocation = new StorageLocation("azure://" + BUCKET_NAME + "/cluster/dc/node");
 
-            final AzureRestorer azureRestorer = new AzureRestorer(cloudStorageAccountFactory, new FixedTasksExecutorSupplier(), restoreOperationRequest);
+            final AzureRestorer azureRestorer = new AzureRestorer(cloudStorageAccountFactory, restoreOperationRequest);
 
             // 1
 

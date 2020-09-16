@@ -16,7 +16,7 @@ import com.instaclustr.cassandra.backup.guice.BackuperFactory;
 import com.instaclustr.cassandra.backup.guice.BucketServiceFactory;
 import com.instaclustr.cassandra.backup.impl.BucketService;
 import com.instaclustr.cassandra.backup.impl.ManifestEntry;
-import com.instaclustr.operations.OperationProgressTracker;
+import com.instaclustr.cassandra.backup.impl.backup.UploadTracker.UploadSession;
 import com.instaclustr.io.GlobalLock;
 import com.instaclustr.operations.Operation;
 import org.slf4j.Logger;
@@ -29,14 +29,17 @@ public class BackupCommitLogsOperation extends Operation<BackupCommitLogsOperati
 
     private final Map<String, BackuperFactory> backuperFactoryMap;
     private final Map<String, BucketServiceFactory> bucketServiceMap;
+    private final UploadTracker uploadTracker;
 
     @AssistedInject
     public BackupCommitLogsOperation(final Map<String, BackuperFactory> backuperFactoryMap,
                                      final Map<String, BucketServiceFactory> bucketServiceMap,
+                                     final UploadTracker uploadTracker,
                                      @Assisted final BackupCommitLogsOperationRequest request) {
         super(request);
         this.backuperFactoryMap = backuperFactoryMap;
         this.bucketServiceMap = bucketServiceMap;
+        this.uploadTracker = uploadTracker;
     }
 
     @Override
@@ -47,7 +50,7 @@ public class BackupCommitLogsOperation extends Operation<BackupCommitLogsOperati
 
         try {
             // generate manifest (set of object keys and source files defining the upload)
-            final Collection<ManifestEntry> manifest = new LinkedList<>(); // linked list to maintain order
+            final Collection<ManifestEntry> manifestEntries = new LinkedList<>(); // linked list to maintain order
             final Pattern pattern = Pattern.compile("CommitLog-\\d+-\\d+\\.log");
             final DirectoryStream.Filter<Path> filter = entry -> Files.isRegularFile(entry) && pattern.matcher(entry.getFileName().toString()).matches();
 
@@ -70,12 +73,20 @@ public class BackupCommitLogsOperation extends Operation<BackupCommitLogsOperati
                     long commitLogLastModified = Files.getLastModifiedTime(commitLog.toFile().toPath()).toMillis();
 
                     final Path bucketKey = backupCommitLogRootKey.resolve(commitLog.getFileName().toString() + "." + commitLogLastModified);
-                    manifest.add(new ManifestEntry(bucketKey, commitLog, ManifestEntry.Type.FILE));
+                    manifestEntries.add(new ManifestEntry(bucketKey, commitLog, ManifestEntry.Type.FILE));
                 }
 
-                logger.debug("{} files in manifest for commitlog backup.", manifest.size());
+                logger.debug("{} files in manifest for commitlog backup.", manifestEntries.size());
 
-                backuper.uploadOrFreshenFiles(this, manifest, new OperationProgressTracker(this, manifest.size()));
+                UploadSession uploadSession = null;
+
+                try {
+                    uploadSession = uploadTracker.submit(backuper, this, manifestEntries, null);
+                    uploadSession.waitUntilConsideredFinished();
+                    uploadTracker.cancelIfNecessary(uploadSession);
+                } finally {
+                    uploadTracker.removeSession(uploadSession);
+                }
             }
         } finally {
             fileLock.release();

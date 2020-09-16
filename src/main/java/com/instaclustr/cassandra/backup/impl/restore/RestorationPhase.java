@@ -37,12 +37,12 @@ import com.instaclustr.cassandra.backup.impl.interaction.ClusterState;
 import com.instaclustr.cassandra.backup.impl.interaction.FailureDetector;
 import com.instaclustr.cassandra.backup.impl.refresh.RefreshOperation;
 import com.instaclustr.cassandra.backup.impl.refresh.RefreshOperationRequest;
+import com.instaclustr.cassandra.backup.impl.restore.DownloadTracker.DownloadSession;
 import com.instaclustr.cassandra.backup.impl.restore.strategy.RestorationContext;
 import com.instaclustr.cassandra.backup.impl.truncate.TruncateOperation;
 import com.instaclustr.cassandra.backup.impl.truncate.TruncateOperationRequest;
 import com.instaclustr.io.FileUtils;
 import com.instaclustr.operations.Operation;
-import com.instaclustr.operations.OperationProgressTracker;
 import org.apache.commons.io.filefilter.DirectoryFileFilter;
 import org.apache.commons.io.filefilter.FileFileFilter;
 import org.slf4j.Logger;
@@ -243,7 +243,16 @@ public abstract class RestorationPhase {
                 final List<ManifestEntry> manifestFiles = manifest.getManifestFiles(ctxt.operation.request.entities,
                                                                                     false /* not possible to restore system keyspace on a live cluster */);
 
-                ctxt.restorer.downloadFiles(manifestFiles, new OperationProgressTracker(ctxt.operation, manifestFiles.size()));
+                DownloadSession session = null;
+
+                try {
+                    session = ctxt.downloadTracker.submit(ctxt.restorer, ctxt.operation, manifestFiles, ctxt.operation.request.snapshotTag);
+
+                    session.waitUntilConsideredFinished();
+                    ctxt.downloadTracker.cancelIfNecessary(session);
+                } finally {
+                    ctxt.downloadTracker.removeSession(session);
+                }
 
                 logger.info("Downloading phase was successfully completed.");
             } catch (final Exception ex) {
